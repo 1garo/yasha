@@ -125,44 +125,44 @@ Each milestone gives you **visible progress** — something to run and see worki
 * Setup repo (Go modules, Dockerfile, Makefile).
 * Implement `POST /accounts` + `GET /accounts/{id}` (returns static balance = 0).
 * Run container locally and test with `curl`.
-* ✅ First working feature: create and query accounts.
+* [ ] First working feature: create and query accounts.
 
 ### Milestone 2 — Ledger & Deposits (2–3 days)
 
 * Implement ledger schema & persistence.
 * Add `POST /transactions` for **deposits only**.
 * Balance is computed directly from ledger (no worker yet).
-* ✅ First money movement: deposit £10 and see it in account balance.
+- [ ] First money movement: deposit £10 and see it in account balance.
 
 ### Milestone 3 — Transfers & Withdrawals (2–3 days)
 
 * Extend transactions API to support withdrawals and transfers.
 * Implement two-entry logic for transfers (debit + credit).
-* ✅ You can now move money between accounts.
+- [ ] You can now move money between accounts.
 
 ### Milestone 4 — Kafka & Balance Worker (2–3 days)
 
 * Produce `ledger.entries` to Kafka.
 * Implement balance worker that consumes and updates materialised balances.
 * Add `GET /accounts/{id}` to now read from balances table.
-* ✅ First async flow: balances update via events, not direct DB queries.
+- [ ] First async flow: balances update via events, not direct DB queries.
 
 ### Milestone 5 — Reconciliation (2 days)
 
 * Implement reconciliation worker to recompute balances from ledger and compare with materialised view.
-* ✅ You can run a job and see a consistency check report.
+- [ ] You can run a job and see a consistency check report.
 
 ### Milestone 6 — Balance Updated Events (Stretch, 2–3 days)
 
 * After updating balances, publish `balance.updated` events.
 * Optional demo consumer: notifications service logs “Balance changed for account X.”
-* ✅ Shows event-driven design beyond core ledger.
+- [ ] Shows event-driven design beyond core ledger.
 
 ### Milestone 7 — Observability & Infra Polish (2–3 days)
 
 * Add OpenTelemetry, Prometheus metrics, and Grafana dashboard.
 * Deploy services to `kind` or `minikube` with Envoy as gateway.
-* ✅ See traces and metrics while hitting APIs.
+- [ ] See traces and metrics while hitting APIs.
 
 ---
 
