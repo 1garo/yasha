@@ -125,7 +125,7 @@ Each milestone gives you **visible progress** — something to run and see worki
 * Setup repo (Go modules, Dockerfile, Makefile).
 * Implement `POST /accounts` + `GET /accounts/{id}` (returns static balance = 0).
 * Run container locally and test with `curl`.
-* [ ] First working feature: create and query accounts.
+* [x] First working feature: create and query accounts.
 
 ### Milestone 2 — Ledger & Deposits (2–3 days)
 
