@@ -132,7 +132,7 @@ Each milestone gives you **visible progress** — something to run and see worki
 * Implement ledger schema & persistence.
 * Add `POST /transactions` for **deposits only**.
 * Balance is computed directly from ledger (no worker yet).
-- [ ] First money movement: deposit £10 and see it in account balance.
+- [x] First money movement: deposit £10 and see it in account balance.
 
 ### Milestone 3 — Transfers & Withdrawals (2–3 days)
 

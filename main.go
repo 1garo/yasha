@@ -23,6 +23,7 @@ type AccountRequest struct {
 	FirstName string `json:"firstName" validate:"required"`
 	LastName  string `json:"lastName" validate:"required"`
 	Email     string `json:"email" validate:"required,email"`
+	Currency  string `json:"currency" validate:"required"`
 }
 
 type Account struct {
@@ -30,9 +31,38 @@ type Account struct {
 	FirstName *string    `json:"firstName"`
 	LastName  *string    `json:"lastName"`
 	Email     *string    `json:"email"`
-	CreatedAt *time.Time `json:"createdAt"`
-	UpdatedAt *time.Time `json:"updateAt"`
+	Currency  *string    `json:"currency"`
+	CreatedAt string     `json:"createdAt"`
+	UpdatedAt string     `json:"updateAt,omitempty"`
 	Balance   int        `json:"balance"` // TODO: default to zero now, change on next steps
+}
+
+type TxType string
+
+const (
+	TxTypeDeposit  TxType = "deposit"
+	TxTypeWithdraw TxType = "withdraw" // for later milestones
+)
+
+func (tx TxType) IsValid() bool {
+	switch tx {
+	case TxTypeDeposit:
+		return true
+	default:
+		return false
+	}
+}
+
+type TransactionRequest struct {
+	AccountId   string `json:"accountId" validate:"required"`
+	Type        TxType `json:"type" validate:"required"`
+	AmountMinor int    `json:"amountMinor" validate:"required"`
+	Currency    string `json:"currency" validate:"required"`
+}
+
+type BalanceResponse struct {
+	AmountMinor int64  `json:"amountMinor"`
+	Currency    string `json:"currency,omitempty"`
 }
 
 type CustomValidator struct {
@@ -47,35 +77,52 @@ func (cv *CustomValidator) Validate(i any) error {
 }
 
 func RequestBodyLogger() echo.MiddlewareFunc {
-    return func(next echo.HandlerFunc) echo.HandlerFunc {
-        return func(c echo.Context) error {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
 			l := logger.FromContext(c)
-            req := c.Request()
-            if req.Body == nil || req.Method == http.MethodGet{
-                return next(c)
-            }
+			req := c.Request()
+			if req.Body == nil || req.Method == http.MethodGet {
+				return next(c)
+			}
 
-            bodyBytes, err := io.ReadAll(req.Body)
-            if err != nil {
-                l.Error("failed to read body", zap.Error(err))
-                return next(c)
-            }
+			bodyBytes, err := io.ReadAll(req.Body)
+			if err != nil {
+				l.Error("failed to read body", zap.Error(err))
+				return next(c)
+			}
 
-            // Restore the body so Echo can read it
-            req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+			// Restore the body so Echo can read it
+			req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-            // Try to unmarshal JSON
-            var bodyMap map[string]any
-            if err := json.Unmarshal(bodyBytes, &bodyMap); err != nil {
-                // fallback: log raw string if not JSON
-                l.Info("not JSON", zap.String("body", string(bodyBytes)))
-            } else {
-                l.Info("request body", zap.Any("body", bodyMap))
-            }
+			// Try to unmarshal JSON
+			var bodyMap map[string]any
+			if err := json.Unmarshal(bodyBytes, &bodyMap); err != nil {
+				// fallback: log raw string if not JSON
+				l.Info("not JSON", zap.String("body", string(bodyBytes)))
+			} else {
+				l.Info("request body", zap.Any("body", bodyMap))
+			}
 
-            return next(c)
-        }
-    }
+			return next(c)
+		}
+	}
+}
+
+func availableCurrencies() map[string]struct{} {
+	return map[string]struct{}{
+		"GBP": {},
+		"BRL": {},
+		"USD": {},
+		"EUR": {},
+	}
+}
+
+func directionFromTxType(txType TxType) string {
+	if txType == TxTypeDeposit {
+		return "credit"
+	}
+
+	return "debit"
 }
 
 func main() {
@@ -128,6 +175,113 @@ func main() {
 	e.Use(l.LoggerMiddleware())
 	e.Logger.SetLevel(log.INFO)
 
+	e.GET("/account/:id/balance", func(c echo.Context) error {
+		lg := logger.FromContext(c)
+		db := c.Get("db").(*gocql.Session)
+
+		id := c.Param("id")
+		lg = lg.With(
+			zap.String("account_id", id),
+		)
+
+		query := `select direction, amount_minor, currency from ledger_entries where account_id = ?`
+		iter := db.Query(query, id).Iter()
+
+		var (
+			direction string
+			curr      string
+			amount    int64
+		)
+
+		lg.Info("getting the direction and amount from ledger entries")
+		amountMinor := int64(0)
+		currency := ""
+		for iter.Scan(&direction, &amount, &curr) {
+			if currency == "" {
+				currency = curr
+			}
+
+			switch direction {
+			case "debit":
+				amountMinor -= amount
+			case "credit":
+				amountMinor += amount
+			}
+		}
+
+		if err := iter.Close(); err != nil {
+			lg.Error("failed to retrieve account balance", zap.Error(err))
+			return echo.ErrInternalServerError
+		}
+
+		lg.Info("successfully retrieved the balance account")
+		return c.JSON(http.StatusOK, map[string]any{
+			"data": BalanceResponse{
+				AmountMinor: amountMinor,
+				Currency:    currency,
+			},
+		})
+	})
+	e.POST("/transaction", func(c echo.Context) error {
+		lg := logger.FromContext(c)
+		db := c.Get("db").(*gocql.Session)
+
+		tx := new(TransactionRequest)
+		if err = c.Bind(tx); err != nil {
+			return echo.ErrBadRequest
+		}
+
+		if err = c.Validate(tx); err != nil {
+			return err
+		}
+
+		if _, ok := availableCurrencies()[tx.Currency]; !ok {
+			lg.Error("unsupported currency", zap.String("currency", tx.Currency))
+			return echo.NewHTTPError(http.StatusBadRequest, "Unsupported currency")
+		}
+
+		if !tx.Type.IsValid() {
+			lg.Error("invalid transaction type", zap.String("type", string(tx.Type)))
+			return echo.NewHTTPError(http.StatusBadRequest, "Invalid transaction type")
+		}
+
+		txnId, _ := gocql.RandomUUID()
+		entryId := gocql.TimeUUID()
+		createdAt := time.Now().UTC()
+		direction := directionFromTxType(tx.Type)
+
+		lg = lg.With(
+			zap.String("direction", direction),
+			zap.String("accountId", tx.AccountId),
+			zap.String("txID", txnId.String()),
+			zap.String("entryId", entryId.String()),
+			zap.Time("createdAt", createdAt),
+		)
+
+		query := `insert into ledger_entries (account_id, entry_id, transaction_id, direction, amount_minor, currency, description, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+		lg.Info("insert new entry into ledger", zap.String("query", query))
+
+		err := db.Query(query,
+			tx.AccountId,
+			entryId,
+			txnId,
+			direction,
+			tx.AmountMinor,
+			tx.Currency,
+			"deposit",
+			createdAt,
+		).Exec()
+		if err != nil {
+			lg.Error("failed to insert new entry to ledger", zap.Error(err))
+			return echo.ErrInternalServerError
+		}
+
+		lg.Info("successfully created the transaction entry in the ledger")
+		return c.JSON(http.StatusCreated, map[string]any{
+			"data": map[string]string{"transactionId": txnId.String()},
+		})
+	})
 	e.POST("/account", func(c echo.Context) error {
 		lg := logger.FromContext(c)
 		db := c.Get("db").(*gocql.Session)
@@ -136,22 +290,27 @@ func main() {
 		if err = c.Bind(acc); err != nil {
 			return echo.ErrBadRequest
 		}
+
 		if err = c.Validate(acc); err != nil {
 			return err
 		}
 
-		id := gocql.TimeUUID()
-		q := `insert into account(id, first_name, last_name, email, created_at) values (?, ?, ?, ?, ?)`
-		lg = lg.With(
-			// TODO: I don't know if I want the query to show up in all info logs, maybe just once before the query
-			zap.String("query", q), zap.Any("account_id", id),
-		)
+		if _, ok := availableCurrencies()[acc.Currency]; !ok {
+			return echo.NewHTTPError(http.StatusBadRequest, "Unsupported currency")
+		}
+
+		id, _ := gocql.RandomUUID()
+		lg = lg.With(zap.Any("account_id", id))
+
+		q := `insert into account(id, first_name, last_name, email, currency, created_at) values (?, ?, ?, ?, ?, ?)`
+		lg.Info("inserting new account into db", zap.String("query", q))
 		if err := db.Query(q,
 			id,
 			acc.FirstName,
 			acc.LastName,
 			acc.Email,
-			gocql.TimeUUID().Time(),
+			acc.Currency,
+			time.Now().UTC(),
 		).Exec(); err != nil {
 			lg.Error("failed to insert new account", zap.Error(err))
 			return echo.ErrInternalServerError
@@ -172,20 +331,25 @@ func main() {
 			return echo.ErrBadRequest
 		}
 
-		var acc Account
-		query := `SELECT id, first_name, last_name, email, created_at, updated_at FROM account WHERE id = ? LIMIT 1`
-		lg = lg.With(
-			// TODO: I don't know if I want the query to show up in all info logs, maybe just once before the query
-			zap.String("query", query), zap.Any("account_id", id),
+		var (
+			acc       Account
+			createdAt *time.Time
+			updatedAt *time.Time
 		)
+
+		lg = lg.With(zap.Any("account_id", id))
+
+		query := `SELECT id, first_name, last_name, email, currency, created_at, updated_at FROM account WHERE id = ? LIMIT 1`
+		lg.Info("querying account from db", zap.String("query", query))
 
 		if err = db.Query(query, id).Scan(
 			&acc.ID,
 			&acc.FirstName,
 			&acc.LastName,
 			&acc.Email,
-			&acc.CreatedAt,
-			&acc.UpdatedAt,
+			&acc.Currency,
+			&createdAt,
+			&updatedAt,
 		); err != nil {
 			lg.Error("failed to query account", zap.Error(err))
 			if errors.Is(err, gocql.ErrNotFound) {
@@ -193,6 +357,11 @@ func main() {
 			}
 
 			return echo.ErrInternalServerError
+		}
+
+		acc.CreatedAt = createdAt.Format(time.RFC3339)
+		if updatedAt != nil {
+			acc.UpdatedAt = updatedAt.Format(time.RFC3339)
 		}
 
 		lg.Info("successfully retrieved account")
