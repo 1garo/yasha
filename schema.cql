@@ -36,8 +36,21 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   PRIMARY KEY ((account_id), created_at, entry_id)
 ) WITH CLUSTERING ORDER BY (created_at DESC);
 
+-- Since you removed the index, your current table design cannot efficiently query by transaction_id anymore, because Cassandra requires the partition key in queries.
+CREATE TABLE IF NOT EXISTS ledger_entries_by_transaction (
+  transaction_id UUID,
+  account_id UUID,
+  entry_id UUID,
+  direction TEXT,
+  amount_minor BIGINT,
+  currency TEXT,
+  description TEXT,
+  created_at TIMESTAMP,
+  PRIMARY KEY ((transaction_id), account_id, entry_id)
+);
+
 -- Optional index to query by transaction_id quickly
-CREATE INDEX IF NOT EXISTS ledger_by_txn_id ON ledger_entries (transaction_id);
+-- CREATE INDEX IF NOT EXISTS ledger_by_txn_id ON ledger_entries (transaction_id);
 
 -- 4. Balances table
 -- Denormalized current balance for fast reads. Updated by a background worker

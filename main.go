@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -41,12 +42,13 @@ type TxType string
 
 const (
 	TxTypeDeposit  TxType = "deposit"
-	TxTypeWithdraw TxType = "withdraw" // for later milestones
+	TxTypeWithdraw TxType = "withdraw"
+	TxTypeTransfer TxType = "transfer"
 )
 
 func (tx TxType) IsValid() bool {
 	switch tx {
-	case TxTypeDeposit:
+	case TxTypeDeposit, TxTypeWithdraw, TxTypeTransfer:
 		return true
 	default:
 		return false
@@ -58,6 +60,7 @@ type TransactionRequest struct {
 	Type        TxType `json:"type" validate:"required"`
 	AmountMinor int    `json:"amountMinor" validate:"required"`
 	Currency    string `json:"currency" validate:"required"`
+	To          string `json:"to,omitempty"`
 }
 
 type BalanceResponse struct {
@@ -123,6 +126,39 @@ func directionFromTxType(txType TxType) string {
 	}
 
 	return "debit"
+}
+
+func insertIntoLedger(db *gocql.Session, tx *TransactionRequest, lg *zap.Logger, direction string, description string, txnId, entryId gocql.UUID) error {
+	createdAt := time.Now().UTC()
+
+	lg = lg.With(
+		zap.String("direction", direction),
+		zap.String("accountId", tx.AccountId),
+		zap.String("txID", txnId.String()),
+		zap.String("entryId", entryId.String()),
+		zap.Time("createdAt", createdAt),
+	)
+
+	query := `insert into ledger_entries (account_id, entry_id, transaction_id, direction, amount_minor, currency, description, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	lg.Info("insert new entry into ledger", zap.String("query", query))
+
+	err := db.Query(query,
+		tx.AccountId,
+		entryId,
+		txnId,
+		direction,
+		tx.AmountMinor,
+		tx.Currency,
+		description,
+		createdAt,
+	).Exec()
+	if err != nil {
+		lg.Error("failed to insert new entry to ledger", zap.Error(err))
+		return echo.ErrInternalServerError
+	}
+
+	return nil
 }
 
 func main() {
@@ -222,6 +258,7 @@ func main() {
 			},
 		})
 	})
+
 	e.POST("/transaction", func(c echo.Context) error {
 		lg := logger.FromContext(c)
 		db := c.Get("db").(*gocql.Session)
@@ -245,41 +282,53 @@ func main() {
 			return echo.NewHTTPError(http.StatusBadRequest, "Invalid transaction type")
 		}
 
-		txnId, _ := gocql.RandomUUID()
-		entryId := gocql.TimeUUID()
-		createdAt := time.Now().UTC()
-		direction := directionFromTxType(tx.Type)
+		txId, _ := gocql.RandomUUID()
+		if tx.Type != TxTypeTransfer {
+			direction := directionFromTxType(tx.Type)
+			entryId := gocql.TimeUUID()
+			if err := insertIntoLedger(db, tx, lg, direction, string(tx.Type), txId, entryId); err != nil {
+				return err
+			}
+		} else if tx.To != "" {
+			// TODO: check if who is being debited have enough balance
+			createdAt := time.Now().UTC()
 
-		lg = lg.With(
-			zap.String("direction", direction),
-			zap.String("accountId", tx.AccountId),
-			zap.String("txID", txnId.String()),
-			zap.String("entryId", entryId.String()),
-			zap.Time("createdAt", createdAt),
-		)
+			debitID := gocql.TimeUUID()
+			direction := directionFromTxType(TxTypeWithdraw)
+			description := fmt.Sprintf("Transfer to %s", tx.To)
+			if err := insertIntoLedger(db, tx, lg, direction, description, txId, debitID); err != nil {
+				return err
+			}
 
-		query := `insert into ledger_entries (account_id, entry_id, transaction_id, direction, amount_minor, currency, description, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-		lg.Info("insert new entry into ledger", zap.String("query", query))
+			if err = session.Query(`
+				  INSERT INTO ledger_entries_by_transaction (transaction_id, account_id, entry_id, direction, amount_minor, currency, description, created_at)
+				  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				txId, tx.AccountId, debitID, direction, tx.AmountMinor, tx.Currency, "Transfer to Bob", createdAt,
+			).Exec(); err != nil {
+				lg.Error("failed to transaction into ledger entries")
+				return echo.ErrInternalServerError
+			}
 
-		err := db.Query(query,
-			tx.AccountId,
-			entryId,
-			txnId,
-			direction,
-			tx.AmountMinor,
-			tx.Currency,
-			"deposit",
-			createdAt,
-		).Exec()
-		if err != nil {
-			lg.Error("failed to insert new entry to ledger", zap.Error(err))
-			return echo.ErrInternalServerError
+			description = fmt.Sprintf("Received from %s", tx.AccountId)
+			tx.AccountId = tx.To
+			creditID := gocql.TimeUUID()
+			direction = directionFromTxType(TxTypeDeposit)
+			if err = insertIntoLedger(db, tx, lg, direction, description, txId, creditID); err != nil {
+				return err
+			}
+			if err = session.Query(`
+				  INSERT INTO ledger_entries_by_transaction (transaction_id, account_id, entry_id, direction, amount_minor, currency, description, created_at)
+				  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				txId, tx.AccountId, creditID, direction, tx.AmountMinor, tx.Currency, "Received from Alice", createdAt,
+			).Exec(); err != nil {
+				lg.Error("failed to transaction into ledger entries")
+				return echo.ErrInternalServerError
+			}
 		}
 
 		lg.Info("successfully created the transaction entry in the ledger")
 		return c.JSON(http.StatusCreated, map[string]any{
-			"data": map[string]string{"transactionId": txnId.String()},
+			"data": map[string]string{"transactionId": txId.String()},
 		})
 	})
 	e.POST("/account", func(c echo.Context) error {

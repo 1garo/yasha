@@ -138,7 +138,7 @@ Each milestone gives you **visible progress** — something to run and see worki
 
 * Extend transactions API to support withdrawals and transfers.
 * Implement two-entry logic for transfers (debit + credit).
-- [ ] You can now move money between accounts.
+- [x] You can now move money between accounts.
 
 ### Milestone 4 — Kafka & Balance Worker (2–3 days)
 
