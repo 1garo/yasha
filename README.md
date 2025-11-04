@@ -140,6 +140,12 @@ Each milestone gives you **visible progress** — something to run and see worki
 * Implement two-entry logic for transfers (debit + credit).
 - [x] You can now move money between accounts.
 
+### Milestone 3.1 — Add handlers for endpoints (2–3 days)
+
+* Each endpoint should go into a different folder
+* Create a function like `InitServer`
+- [ ] Can call endpoints but from handlers and not all in main.go.
+
 ### Milestone 4 — Kafka & Balance Worker (2–3 days)
 
 * Produce `ledger.entries` to Kafka.
