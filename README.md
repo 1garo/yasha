@@ -1,17 +1,11 @@
-# MVP Implementation Plan — Bank Operations (practice for Monzo Backend Engineer III)
-
-> Goal: build a focused, runnable MVP that exercises the technologies, design patterns and operational concerns highlighted in Monzo's Backend Engineer III role. You'll practice building resilient, observable, event-driven banking primitives (accounts, ledger, transactions, reconciliations) using a stack and architecture inspired by Monzo.
-
----
-
 ## 1. Objectives & learning outcomes
 
 * Implement a small, production-ish banking backend that supports: account creation, deposits, withdrawals, transfers, and a simple reconciliation job.
 * Use Go for service code and idiomatic concurrency/structure.
-* Use Kafka for async flows and Cassandra-like persistence (or local replacement for dev) to mirror Monzo's architecture.
+* Use Kafka for async flows and Cassandra-like persistence (or local replacement for dev).
 * Containerise and run everything on Kubernetes (local: kind/minikube) with Envoy as an edge/proxy for gRPC/HTTP routing.
 * Add observability: metrics, logs, structured tracing (OpenTelemetry) and simple chaos tests.
-* Practice system-design answers that match Monzo's scale concerns (idempotency, resilience, data modeling for money, eventual consistency, auditability).
+* Practice system-design answers that scale concerns (idempotency, resilience, data modeling for money, eventual consistency, auditability).
 
 ---
 
@@ -58,7 +52,7 @@ Flow for a transfer:
 
 * **Language:** Go (modules, idiomatic packages)
 * **Kafka:** Use `kafka` (local: `confluentinc/cp-kafka` or `bitnami/kafka`) for realistic testing
-* **Cassandra:** Monzo uses Cassandra; for local dev use either Cassandra (Docker image) or replace with SQLite/Postgres for the ledger and mark differences. If you want to simulate wide-column modelling, use ScyllaDB/Cassandra image. Keep schema simple: partition by `account_id`; time-series of ledger entries.
+* **Cassandra:** for local dev use either Cassandra (Docker image) or replace with SQLite/Postgres for the ledger and mark differences. If you want to simulate wide-column modelling, use ScyllaDB/Cassandra image. Keep schema simple: partition by `account_id`; time-series of ledger entries.
 * **Kubernetes:** `kind` or `minikube` for local cluster. Use `skaffold` for iteration if desired.
 * **Envoy:** use a simple Envoy config for HTTP routing to the API service.
 * **Observability:** OpenTelemetry + Prometheus + Grafana (or `prometheus` + `jaeger` docker images)
@@ -218,11 +212,34 @@ If you want, I can:
 
 * Produce a detailed folder layout + starter Go code for the ledger and API (one endpoint fully implemented).
 * Generate Kubernetes manifests and a docker-compose for the Kafka + DB stack.
+
+---
+
+## 13. Local Kubernetes for Cassandra
+
+For a simple test setup, this repo now includes a minimal Cassandra manifest set under [`k8s/cassandra`](./k8s/cassandra).
+
+Apply it with:
+
+```bash
+sh ./scripts/bootstrap-cassandra.sh
+kubectl wait --for=condition=ready pod -l app=cassandra --timeout=10m
+kubectl wait --for=condition=complete job/cassandra-init --timeout=10m
+```
+
+What it does:
+
+* Starts a single Cassandra pod and a `cassandra` service on port `9042`
+* Creates the `cassandra-schema` ConfigMap from [`db.cql`](./db.cql)
+* Applies the init schema using a one-shot Job
+* Uses the current app schema from [`db.cql`](./db.cql), which matches the code in `main.go`
+
+Important:
+
+* [`schema.cql`](./schema.cql) is a different schema than the one the current Go code uses.
+* If you want the API to use `schema.cql`, I should align the Go code and the bootstrap script to that schema next.
 * Create a sample GitHub Actions workflow to run integration tests.
 
 Tell me which of the above you'd like next and I'll generate the code/manifest/snippets for you.
 
 ---
-
-Good luck — this plan gives you a focused, interview-relevant project that mirrors Monzo's stack and operational concerns. Build it iteratively, keep the ledger immutable, and instrument everything for observability.
-

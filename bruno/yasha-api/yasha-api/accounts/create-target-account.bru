@@ -1,0 +1,34 @@
+meta {
+  name: Create Target Account
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseURL}}/account
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body {
+  {
+    "firstName": "Bob",
+    "lastName": "Santos",
+    "email": "bob@example.com",
+    "currency": "BRL"
+  }
+}
+
+tests {
+  test("returns 201", function() {
+    expect(res.status).to.equal(201);
+  });
+}
+
+script:post-response {
+  bru.setVar("targetAccountId", res.body.data);
+}

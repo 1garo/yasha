@@ -1,0 +1,30 @@
+meta {
+  name: Create Withdrawal
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseURL}}/transaction
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body {
+  {
+    "accountId": "{{accountId}}",
+    "type": "withdraw",
+    "amountMinor": 250,
+    "currency": "BRL"
+  }
+}
+
+tests {
+  test("returns 201", function() {
+    expect(res.status).to.equal(201);
+  });
+}

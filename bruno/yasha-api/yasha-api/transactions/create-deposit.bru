@@ -1,0 +1,30 @@
+meta {
+  name: Create Deposit
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseURL}}/transaction
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body {
+  {
+    "accountId": "{{accountId}}",
+    "type": "deposit",
+    "amountMinor": 1000,
+    "currency": "BRL"
+  }
+}
+
+tests {
+  test("returns 201", function() {
+    expect(res.status).to.equal(201);
+  });
+}

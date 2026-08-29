@@ -1,22 +1,17 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
+	"github.com/1garo/yasha/internal/config"
+	"github.com/1garo/yasha/internal/server"
 	"github.com/1garo/yasha/logger"
-	"github.com/go-playground/validator"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
-	"github.com/labstack/gommon/log"
 
 	"github.com/gocql/gocql"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -66,49 +61,6 @@ type TransactionRequest struct {
 type BalanceResponse struct {
 	AmountMinor int64  `json:"amountMinor"`
 	Currency    string `json:"currency,omitempty"`
-}
-
-type CustomValidator struct {
-	validator *validator.Validate
-}
-
-func (cv *CustomValidator) Validate(i any) error {
-	if err := cv.validator.Struct(i); err != nil {
-		return echo.ErrUnprocessableEntity
-	}
-	return nil
-}
-
-func RequestBodyLogger() echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			l := logger.FromContext(c)
-			req := c.Request()
-			if req.Body == nil || req.Method == http.MethodGet {
-				return next(c)
-			}
-
-			bodyBytes, err := io.ReadAll(req.Body)
-			if err != nil {
-				l.Error("failed to read body", zap.Error(err))
-				return next(c)
-			}
-
-			// Restore the body so Echo can read it
-			req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-			// Try to unmarshal JSON
-			var bodyMap map[string]any
-			if err := json.Unmarshal(bodyBytes, &bodyMap); err != nil {
-				// fallback: log raw string if not JSON
-				l.Info("not JSON", zap.String("body", string(bodyBytes)))
-			} else {
-				l.Info("request body", zap.Any("body", bodyMap))
-			}
-
-			return next(c)
-		}
-	}
 }
 
 func availableCurrencies() map[string]struct{} {
@@ -163,53 +115,12 @@ func insertIntoLedger(db *gocql.Session, tx *TransactionRequest, lg *zap.Logger,
 
 func main() {
 	e := echo.New()
-
-	l := logger.NewCtxLogger()
-
-	e.Logger.Info("Starting cluster")
-	cluster := gocql.NewCluster("127.0.0.1")
-	cluster.Port = 9042
-	cluster.Keyspace = "yasha"
-	cluster.Consistency = gocql.Quorum
-
-	session, err := cluster.CreateSession()
+	cfg := config.Load()
+	srv, err := server.NewServer(e, cfg)
 	if err != nil {
 		e.Logger.Fatal(err)
 	}
-	defer func(session *gocql.Session) {
-		if session != nil {
-			session.Close()
-		}
-	}(session)
-
-	e.Logger.Info("Connected to Cassandra")
-
-	e.Validator = &CustomValidator{validator: validator.New()}
-	e.Use(RequestBodyLogger())
-	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			c.Set("db", session)
-			return next(c)
-		}
-	})
-	e.Use(middleware.Recover())
-	e.Use(middleware.RequestIDWithConfig(
-		middleware.RequestIDConfig{
-			Generator: func() string {
-				return uuid.New().String()
-			},
-		}))
-	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		LogURI:       true,
-		LogStatus:    true,
-		LogRequestID: true,
-		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-			logger.FromContext(c).Sugar().Infof("finished: %s", v.URI)
-			return nil
-		},
-	}))
-	e.Use(l.LoggerMiddleware())
-	e.Logger.SetLevel(log.INFO)
+	srv.InitMiddleware()
 
 	e.GET("/account/:id/balance", func(c echo.Context) error {
 		lg := logger.FromContext(c)
@@ -260,6 +171,7 @@ func main() {
 	})
 
 	e.POST("/transaction", func(c echo.Context) error {
+		var err error
 		lg := logger.FromContext(c)
 		db := c.Get("db").(*gocql.Session)
 
@@ -300,7 +212,7 @@ func main() {
 				return err
 			}
 
-			if err = session.Query(`
+			if err = db.Query(`
 				  INSERT INTO ledger_entries_by_transaction (transaction_id, account_id, entry_id, direction, amount_minor, currency, description, created_at)
 				  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 				txId, tx.AccountId, debitID, direction, tx.AmountMinor, tx.Currency, "Transfer to Bob", createdAt,
@@ -316,7 +228,7 @@ func main() {
 			if err = insertIntoLedger(db, tx, lg, direction, description, txId, creditID); err != nil {
 				return err
 			}
-			if err = session.Query(`
+			if err = db.Query(`
 				  INSERT INTO ledger_entries_by_transaction (transaction_id, account_id, entry_id, direction, amount_minor, currency, description, created_at)
 				  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 				txId, tx.AccountId, creditID, direction, tx.AmountMinor, tx.Currency, "Received from Alice", createdAt,
@@ -331,7 +243,9 @@ func main() {
 			"data": map[string]string{"transactionId": txId.String()},
 		})
 	})
+
 	e.POST("/account", func(c echo.Context) error {
+		var err error
 		lg := logger.FromContext(c)
 		db := c.Get("db").(*gocql.Session)
 

@@ -1,0 +1,31 @@
+meta {
+  name: Create Transfer
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseURL}}/transaction
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body {
+  {
+    "accountId": "{{accountId}}",
+    "type": "transfer",
+    "amountMinor": 500,
+    "currency": "BRL",
+    "to": "{{targetAccountId}}"
+  }
+}
+
+tests {
+  test("returns 201", function() {
+    expect(res.status).to.equal(201);
+  });
+}
