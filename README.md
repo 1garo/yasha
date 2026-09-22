@@ -61,65 +61,111 @@ The project is also a learning and interview-oriented system-design exercise. Th
 - Add production-style observability and operational tooling.
 - Run the system locally with Docker and eventually deploy it to Kubernetes.
 
-## Architecture direction
+## Scope and architecture
 
-The planned architecture consists of:
+### MVP capabilities
 
-- Go HTTP API for validation, idempotency, and ledger writes.
-- PostgreSQL for the current ledger and account persistence.
-- Kafka for asynchronous `ledger.entries` and `balance.updated` events.
-- A balance worker for materialized balance updates.
-- A reconciliation worker that compares balances with the ledger.
-- Optional fraud, notification, settlement, and analytics consumers.
-- Envoy or another edge proxy for routing and future mTLS experiments.
-- Prometheus, Grafana, OpenTelemetry, and structured logs for observability.
+- Accounts and account lookup.
+- Available and ledger balances.
+- Immutable ledger entries as the canonical source of truth.
+- Deposit, withdrawal, and transfer APIs.
+- Kafka events for `ledger.entries`.
+- A reconciliation worker that compares the ledger with cached balances.
 
-For a transfer, the API should write a debit and credit entry, publish a ledger event, and let downstream workers update derived balances.
+### Planned architecture
+
+- **API:** Go HTTP service responsible for validation, idempotency, and ledger writes.
+- **Persistence:** PostgreSQL for the current local ledger and account storage.
+- **Event bus:** Kafka topics for `ledger.entries` and optionally `balance.updated`.
+- **Workers:** Balance materialization, reconciliation, and future settlement processing.
+- **Consumers:** Optional notification, fraud, analytics, and external-payment services.
+- **Proxy:** Envoy for HTTP routing and future mTLS experiments.
+- **Observability:** Structured logs, Prometheus metrics, OpenTelemetry tracing, and Grafana dashboards.
+
+Transfer flow:
+
+1. The API receives and validates a request.
+2. The API writes a debit and credit ledger entry.
+3. The API publishes a `ledger.entries` event.
+4. The balance worker updates the materialized balance.
+5. Other consumers can react to `balance.updated` without querying the ledger.
 
 ## Roadmap
 
-### Completed foundation
+Each milestone should produce something visible and runnable while keeping the scope small.
 
-- [x] Account creation and account lookup.
-- [x] Deposits, withdrawals, and transfers.
-- [x] Append-only ledger persistence.
-- [x] PostgreSQL local development stack.
-- [x] Adminer database browser.
-- [x] Feature-based HTTP handlers under `internal/`.
+### Milestone 1 — Project scaffold and Accounts API
 
-### Next milestones
+- [x] Set up Go modules, Makefile, Docker Compose, and local development workflow.
+- [x] Implement account creation and account lookup.
+- [x] Run the service locally against PostgreSQL.
+- [x] Browse local data through Adminer.
 
-1. **Currency model**
+### Milestone 2 — Ledger and deposits
 
-   Decide whether accounts use one fixed currency, support multiple currency balances, support currency conversion, or combine these approaches. Track this separately in [issue #1](https://github.com/1garo/yasha/issues/1).
+- [x] Implement the append-only ledger schema and persistence.
+- [x] Add deposit transactions.
+- [x] Calculate balances directly from ledger entries.
+- [x] Keep money in integer minor units rather than floating-point values.
 
-2. **Ledger hardening**
+### Milestone 3 — Transfers and withdrawals
 
-   Add idempotency keys, stronger account and transaction validation, insufficient-funds checks, and reliable transfer invariants.
+- [x] Add withdrawal transactions.
+- [x] Add transfers between accounts.
+- [x] Represent transfers with two ledger entries: one debit and one credit.
+- [ ] Add insufficient-funds validation and stronger transfer invariants.
 
-3. **Kafka and balance worker**
+### Milestone 3.1 — HTTP handler structure
 
-   Publish `ledger.entries` events and update materialized balances asynchronously.
+- [x] Move handlers out of `main.go` into feature packages under `internal/`.
+- [x] Keep route registration in the server package.
+- [ ] Add focused handler and repository tests.
 
-4. **Reconciliation**
+### Milestone 3.2 — Currency model
 
-   Recompute balances from the ledger and report differences from materialized balances.
+- [ ] Decide whether accounts use one fixed currency or support multiple currencies.
+- [ ] Decide whether currency conversion is an explicit internal operation.
+- [ ] Enforce the chosen rules for deposits, withdrawals, and transfers.
+- [ ] Decide how existing mixed-currency ledger entries should be handled.
 
-5. **Balance events and integrations**
+See [issue #1](https://github.com/1garo/yasha/issues/1) for the design discussion.
 
-   Publish `balance.updated` events and add optional notification, fraud, analytics, and settlement consumers.
+### Milestone 4 — Kafka and balance worker
 
-6. **Observability**
+- [ ] Add a Kafka topic for `ledger.entries`.
+- [ ] Publish an event after a successful ledger transaction.
+- [ ] Implement a worker that consumes ledger events and updates materialized balances.
+- [ ] Update account reads to use the balance projection where appropriate.
+- [ ] Demonstrate the first asynchronous balance update flow.
 
-   Add metrics, structured logging, distributed tracing, dashboards, and useful operational alerts.
+### Milestone 5 — Reconciliation
 
-7. **Infrastructure and delivery**
+- [ ] Recompute balances from the ledger.
+- [ ] Compare computed balances with materialized balances.
+- [ ] Report discrepancies with enough context to investigate them.
+- [ ] Add a runnable reconciliation command or scheduled worker.
 
-   Add Docker images, Kubernetes manifests, integration tests, CI, and local deployment workflows.
+### Milestone 6 — Balance events and integrations
 
-8. **Stretch features**
+- [ ] Publish `balance.updated` after a balance projection changes.
+- [ ] Add a small notification consumer as a demonstration.
+- [ ] Leave room for fraud, analytics, and settlement consumers.
 
-   Add statement export, a simple anti-fraud rule, an external payments simulator, and a small demonstration UI.
+### Milestone 7 — Observability and infrastructure
+
+- [ ] Add request, database, and worker metrics.
+- [ ] Add structured logs with request and transaction correlation IDs.
+- [ ] Add OpenTelemetry traces across HTTP, database, and Kafka operations.
+- [ ] Add Prometheus/Grafana dashboards and useful alerts.
+- [ ] Add Docker images and Kubernetes manifests for local deployment.
+- [ ] Add CI checks and integration tests against PostgreSQL and Kafka.
+
+### Stretch features
+
+- [ ] Export account statements as CSV.
+- [ ] Add a simple anti-fraud rule, such as blocking unusually large activity in a short window.
+- [ ] Add a simulated external payments connector.
+- [ ] Add a small UI for creating accounts and making transfers.
 
 ## Testing strategy
 
