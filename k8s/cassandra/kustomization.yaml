@@ -1,4 +1,0 @@
-resources:
-  - service.yaml
-  - statefulset.yaml
-  - init-job.yaml

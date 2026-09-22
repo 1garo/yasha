@@ -1,17 +1,30 @@
 services:
-  cassandra:
-    image: cassandra:4.1
-    container_name: cassandra
-    ports:
-      - "9042:9042" # CQL
+  postgres:
+    image: postgres:17-alpine
+    container_name: yasha-postgres
     environment:
-      CASSANDRA_CLUSTER_NAME: "yasha_dev"
-      CASSANDRA_NUM_TOKENS: 4
-      CASSANDRA_START_RPC: "true"
-      MAX_HEAP_SIZE: 512M
-      HEAP_NEWSIZE: 100M
+      POSTGRES_DB: yasha
+      POSTGRES_USER: yasha
+      POSTGRES_PASSWORD: yasha
+    ports:
+      - "5432:5432"
     volumes:
-      - cassandra_data:/var/lib/cassandra
+      - postgres_data:/var/lib/postgresql/data
+      - ../schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yasha -d yasha"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer:4
+    container_name: yasha-adminer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
 
 volumes:
-  cassandra_data:
+  postgres_data:

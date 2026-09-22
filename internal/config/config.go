@@ -3,16 +3,12 @@ package config
 import "os"
 
 type Config struct {
-	CassandraHost    string
-	CassandraPort    string
-	CassandraKeyspace string
+	DatabaseURL string
 }
 
 func Load() Config {
 	return Config{
-		CassandraHost:    getEnv("CASSANDRA_HOST", "cassandra"),
-		CassandraPort:    getEnv("CASSANDRA_PORT", "9042"),
-		CassandraKeyspace: getEnv("CASSANDRA_KEYSPACE", "yasha"),
+		DatabaseURL: getEnv("DATABASE_URL", "postgres://yasha:yasha@localhost:5432/yasha?sslmode=disable"),
 	}
 }
 
@@ -23,5 +19,3 @@ func getEnv(key, fallback string) string {
 
 	return fallback
 }
-
-
