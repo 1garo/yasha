@@ -31,7 +31,20 @@ func (h *Handler) BalanceHandler(c echo.Context) error {
 	)
 	if err = h.db.QueryRowContext(
 		c.Request().Context(),
-		`SELECT COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount_minor ELSE -amount_minor END), 0), COALESCE(MAX(currency), '') FROM ledger_entries WHERE account_id = $1`, id,
+		`SELECT COALESCE(
+			SUM(
+				CASE 
+				WHEN direction = 'credit' 
+				THEN amount_minor ELSE -amount_minor 
+				END
+			), 
+			0
+		) AS balance, 
+		acc.currency as currency
+		FROM account as acc
+		LEFT JOIN ledger_entries as le ON le.account_id = acc.id
+		WHERE acc.id = $1
+		GROUP BY acc.id, acc.currency`, id,
 	).Scan(
 		&balance,
 		&currency,
@@ -56,7 +69,10 @@ func (h *Handler) CreateAccountHandler(c echo.Context) error {
 
 	id := uuid.New()
 	now := time.Now().UTC()
-	_, err := h.db.ExecContext(c.Request().Context(), `INSERT INTO account (id, first_name, last_name, email, currency, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $6)`, id, request.FirstName, request.LastName, request.Email, request.Currency, now)
+	_, err := h.db.ExecContext(c.Request().Context(),
+		`INSERT INTO account (id, first_name, last_name, email, currency, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $6)`,
+		id, request.FirstName, request.LastName, request.Email, request.Currency, now,
+	)
 	if err != nil {
 		return fmt.Errorf("create account: %w", err)
 	}
@@ -68,9 +84,14 @@ func (h *Handler) GetAccountHandler(c echo.Context) error {
 	if err != nil {
 		return echo.ErrBadRequest
 	}
-	var account Account
-	var createdAt, updatedAt time.Time
-	err = h.db.QueryRowContext(c.Request().Context(), `SELECT id, first_name, last_name, email, currency, created_at, updated_at FROM account WHERE id = $1`, id).Scan(&account.ID, &account.FirstName, &account.LastName, &account.Email, &account.Currency, &createdAt, &updatedAt)
+	var (
+		account              Account
+		createdAt, updatedAt time.Time
+	)
+	err = h.db.QueryRowContext(
+		c.Request().Context(),
+		`SELECT id, first_name, last_name, email, currency, created_at, updated_at FROM account WHERE id = $1`, id).
+		Scan(&account.ID, &account.FirstName, &account.LastName, &account.Email, &account.Currency, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return echo.ErrNotFound
 	}

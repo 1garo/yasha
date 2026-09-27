@@ -121,7 +121,13 @@ Each milestone should produce something visible and runnable while keeping the s
 - [x] Keep route registration in the server package.
 - [ ] Add focused handler and repository tests.
 
-### Milestone 3.2 — Currency model
+### Milestone 3.2 — Safe controller errors and logging
+
+- [ ] Add structured logging around unexpected controller and database failures, including enough request context to investigate incidents later.
+- [ ] Map internal failures, such as a failed query in `CreateAccountHandler`, to a safe default HTTP status and user-facing message.
+- [ ] Keep database errors and other implementation details out of API responses.
+
+### Milestone 3.3 — Currency model
 
 - [ ] Decide whether accounts use one fixed currency or support multiple currencies.
 - [ ] Decide whether currency conversion is an explicit internal operation.
