@@ -90,12 +90,33 @@ func (h *Handler) GetAccountHandler(c echo.Context) error {
 	)
 	err = h.db.QueryRowContext(
 		c.Request().Context(),
-		`SELECT id, first_name, last_name, email, currency, created_at, updated_at FROM account WHERE id = $1`, id).
-		Scan(&account.ID, &account.FirstName, &account.LastName, &account.Email, &account.Currency, &createdAt, &updatedAt)
+		`SELECT 
+		acc.id, 
+		acc.first_name, 
+		acc.last_name, 
+		acc.email, 
+		acc.currency, 
+		acc.created_at, 
+		acc.updated_at,
+		COALESCE(
+			SUM(
+				CASE
+				WHEN le.direction = 'credit' 
+				THEN amount_minor
+				ELSE -amount_minor
+				END
+		), 0) as balance
+		FROM account as acc
+		LEFT JOIN ledger_entries as le ON le.account_id = acc.id
+		WHERE acc.id = $1
+		GROUP BY acc.id`, id).
+		Scan(&account.ID, &account.FirstName, &account.LastName, &account.Email, &account.Currency, &createdAt, &updatedAt, &account.Balance)
 	if errors.Is(err, sql.ErrNoRows) {
 		return echo.ErrNotFound
 	}
 	if err != nil {
+		l := c.Logger()
+		l.Error(err)
 		return fmt.Errorf("get account: %w", err)
 	}
 	account.CreatedAt = createdAt.Format(time.RFC3339)
