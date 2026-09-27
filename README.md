@@ -127,12 +127,12 @@ Each milestone should produce something visible and runnable while keeping the s
 - [ ] Map internal failures, such as a failed query in `CreateAccountHandler`, to a safe default HTTP status and user-facing message.
 - [ ] Keep database errors and other implementation details out of API responses.
 
-### Milestone 3.3 — Currency model
+### Milestone 3.3 — Currency-aware balances
 
-- [ ] Decide whether accounts use one fixed currency or support multiple currencies.
-- [ ] Decide whether currency conversion is an explicit internal operation.
-- [ ] Enforce the chosen rules for deposits, withdrawals, and transfers.
-- [ ] Decide how existing mixed-currency ledger entries should be handled.
+- [x] Accounts support balances in multiple currencies.
+- [x] Currency conversion is not implicit; balances are kept separate by currency.
+- [x] Deposits, withdrawals, and transfers validate that the transaction currency is supported.
+- [x] Existing mixed-currency ledger entries are preserved and calculated independently.
 
 See [issue #1](https://github.com/1garo/yasha/issues/1) for the design discussion.
 
