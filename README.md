@@ -124,9 +124,9 @@ Each milestone should produce something visible and runnable while keeping the s
 
 ### Milestone 3.2 — Safe controller errors and logging
 
-- [ ] Add structured logging around unexpected controller and database failures, including enough request context to investigate incidents later.
-- [ ] Map internal failures, such as a failed query in `CreateAccountHandler`, to a safe default HTTP status and user-facing message.
-- [ ] Keep database errors and other implementation details out of API responses.
+- [x] Add structured logging around unexpected controller and database failures, including enough request context to investigate incidents later.
+- [x] Map internal failures, such as a failed query in `CreateAccountHandler`, to a safe default HTTP status and user-facing message.
+- [x] Keep database errors and other implementation details out of API responses.
 
 ### Milestone 3.3 — Currency-aware balances
 

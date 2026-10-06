@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
+	"go.uber.org/zap"
 )
 
 type server struct {
@@ -21,14 +22,17 @@ type server struct {
 	db  *sql.DB
 }
 
-func InitServer(e *echo.Echo, cfg config.Config) (server, error) {
-	log := logger.NewCtxLogger()
-	db, err := db.InitDB(cfg)
+func New(e *echo.Echo, cfg config.Config) (*server, error) {
+	log, err := logger.NewCtxLogger()
 	if err != nil {
-		return server{}, err
+		return nil, err
+	}
+	db, err := db.New(cfg)
+	if err != nil {
+		return nil, err
 	}
 
-	return server{
+	return &server{
 		e,
 		log,
 		db,
@@ -45,14 +49,17 @@ func (s *server) InitMiddleware() {
 				return uuid.New().String()
 			},
 		}))
+	s.e.Use(s.log.LoggerMiddleware())
 	s.e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogURI:       true,
 		LogStatus:    true,
 		LogRequestID: true,
 		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-			logger.FromContext(c).Sugar().Infof("finished: %s", v.URI)
+			logger.FromContext(c).Info("request completed",
+				zap.Int("status", v.Status),
+				zap.Duration("latency", v.Latency),
+			)
 			return nil
 		},
 	}))
-	s.e.Use(s.log.LoggerMiddleware())
 }

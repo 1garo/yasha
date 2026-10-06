@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/1garo/yasha/logger"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 type Handler struct {
@@ -18,10 +20,13 @@ func NewHandler(db *sql.DB) *Handler {
 }
 
 func (h *Handler) BalanceHandler(c echo.Context) error {
+	lg := logger.FromContext(c).With(zap.String("operation", "get_balance"))
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
+		lg.Warn("invalid account id", zap.Error(err))
 		return echo.ErrBadRequest
 	}
+	lg = lg.With(zap.String("account_id", id.String()))
 
 	rows, err := h.db.QueryContext(
 		c.Request().Context(),
@@ -41,8 +46,7 @@ func (h *Handler) BalanceHandler(c echo.Context) error {
 		GROUP BY acc.id, le.currency`, id,
 	)
 	if err != nil {
-		lg := c.Logger()
-		lg.Errorf("failed to get balance: %v", err)
+		lg.Error("failed to get balance", zap.Error(err))
 		return echo.ErrInternalServerError
 	}
 	defer rows.Close()
@@ -55,8 +59,7 @@ func (h *Handler) BalanceHandler(c echo.Context) error {
 			currency sql.NullString
 		)
 		if err := rows.Scan(&balance, &currency); err != nil {
-			lg := c.Logger()
-			lg.Errorf("rows failed: %v", err)
+			lg.Error("failed to scan rows", zap.Error(err))
 			return echo.ErrInternalServerError
 		}
 
@@ -70,44 +73,53 @@ func (h *Handler) BalanceHandler(c echo.Context) error {
 	}
 
 	if err := rows.Err(); err != nil {
-		lg := c.Logger()
-		lg.Errorf("rows failed: %v", err)
+		lg.Error("failed while reading account balances", zap.Error(err))
 		return echo.ErrInternalServerError
 	}
 	if !found {
+		lg.Debug("account not found")
 		return echo.ErrNotFound
 	}
 
+	lg.Info("balance retrieved", zap.Int("balance_count", len(balances)))
 	return c.JSON(http.StatusOK, map[string]any{"data": balances})
 }
 
 func (h *Handler) CreateAccountHandler(c echo.Context) error {
+	lg := logger.FromContext(c).With(zap.String("operation", "create_account"))
 	var request AccountRequest
 	if err := c.Bind(&request); err != nil {
+		lg.Warn("failed to bind request", zap.Error(err))
 		return echo.ErrBadRequest
 	}
 	if err := c.Validate(&request); err != nil {
+		lg.Warn("request validation failed", zap.Error(err))
 		return err
 	}
+
 	id := uuid.New()
+	lg = lg.With(zap.String("account_id", id.String()))
 	now := time.Now().UTC()
 	_, err := h.db.ExecContext(c.Request().Context(),
 		`INSERT INTO account (id, first_name, last_name, email, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $5)`,
 		id, request.FirstName, request.LastName, request.Email, now,
 	)
 	if err != nil {
-		lg := c.Logger()
-		lg.Error("create account", err)
+		lg.Error("failed to create account in database", zap.Error(err))
 		return echo.ErrInternalServerError
 	}
+	lg.Info("account created")
 	return c.JSON(http.StatusCreated, map[string]string{"data": id.String()})
 }
 
 func (h *Handler) GetAccountHandler(c echo.Context) error {
+	lg := logger.FromContext(c).With(zap.String("operation", "get_account"))
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
+		lg.Warn("invalid account id", zap.Error(err))
 		return echo.ErrBadRequest
 	}
+	lg = lg.With(zap.String("account_id", id.String()))
 	rows, err := h.db.QueryContext(
 		c.Request().Context(),
 		`SELECT 
@@ -131,7 +143,7 @@ func (h *Handler) GetAccountHandler(c echo.Context) error {
 		WHERE acc.id = $1
 		GROUP BY acc.id, le.currency`, id)
 	if err != nil {
-		c.Logger().Errorf("failed to query account: %v", err)
+		lg.Error("failed to query account", zap.Error(err))
 		return echo.ErrInternalServerError
 	}
 	defer rows.Close()
@@ -156,7 +168,7 @@ func (h *Handler) GetAccountHandler(c echo.Context) error {
 			&balance,
 			&currency,
 		); err != nil {
-			c.Logger().Errorf("failed to scan account balance: %v", err)
+			lg.Error("failed to scan account balance", zap.Error(err))
 			return echo.ErrInternalServerError
 		}
 		found = true
@@ -168,13 +180,15 @@ func (h *Handler) GetAccountHandler(c echo.Context) error {
 		}
 	}
 	if err := rows.Err(); err != nil {
-		c.Logger().Errorf("failed to read account balances: %v", err)
+		lg.Error("failed to read account balances", zap.Error(err))
 		return echo.ErrInternalServerError
 	}
 	if !found {
+		lg.Debug("account not found")
 		return echo.ErrNotFound
 	}
 	account.CreatedAt = createdAt.Format(time.RFC3339)
 	account.UpdatedAt = updatedAt.Format(time.RFC3339)
+	lg.Info("account retrieved", zap.Int("balance_count", len(account.Balances)))
 	return c.JSON(http.StatusOK, account)
 }

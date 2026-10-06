@@ -8,7 +8,7 @@ import (
 
 func main() {
 	e := echo.New()
-	srv, err := server.InitServer(e, config.Load())
+	srv, err := server.New(e, config.Load())
 	if err != nil {
 		e.Logger.Fatal(err)
 	}

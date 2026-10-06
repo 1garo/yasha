@@ -9,7 +9,7 @@ import (
 	"github.com/1garo/yasha/internal/config"
 )
 
-func InitDB(cfg config.Config) (*sql.DB, error) {
+func New(cfg config.Config) (*sql.DB, error) {
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("opening PostgreSQL connection: %w", err)

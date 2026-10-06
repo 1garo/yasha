@@ -7,27 +7,26 @@ import (
 	"go.uber.org/zap"
 )
 
-
-type CtxLoggerKey struct{}
+type ctxLoggerKey struct{}
 
 type CtxLogger struct {
 	logger *zap.Logger
 }
 
-func NewCtxLogger() *CtxLogger {
-	logger, _ := zap.NewProduction()
-	return &CtxLogger{
-		logger,
+func NewCtxLogger() (*CtxLogger, error) {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		return nil, err
 	}
+	return &CtxLogger{logger: logger}, nil
 }
 
 func FromContext(c echo.Context) *zap.Logger {
-	if l, ok := c.Request().Context().Value(CtxLoggerKey{}).(*zap.Logger); ok {
+	if l, ok := c.Request().Context().Value(ctxLoggerKey{}).(*zap.Logger); ok {
 		return l
-	} 
+	}
 
-	l, _ := zap.NewProduction()
-	return l
+	return zap.NewNop()
 }
 
 func (cl *CtxLogger) LoggerMiddleware() echo.MiddlewareFunc {
@@ -40,7 +39,7 @@ func (cl *CtxLogger) LoggerMiddleware() echo.MiddlewareFunc {
 				zap.String("request_id", c.Response().Header().Get(echo.HeaderXRequestID)),
 			)
 
-			ctx := context.WithValue(c.Request().Context(), CtxLoggerKey{}, requestLogger)
+			ctx := context.WithValue(c.Request().Context(), ctxLoggerKey{}, requestLogger)
 			c.SetRequest(c.Request().WithContext(ctx))
 			return next(c)
 		}
