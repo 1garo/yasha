@@ -4,6 +4,47 @@ Yasha is a small production-oriented banking backend written in Go. It supports 
 
 PostgreSQL is currently used as the local persistence layer for simplicity. The rest of the roadmap remains focused on event-driven processing, observability, reconciliation, and scalable infrastructure.
 
+## Project goals
+
+The project is also a learning and interview-oriented system-design exercise. The main goals are:
+
+- Build a banking backend with clear domain boundaries.
+- Treat the ledger as the canonical, append-only source of truth.
+- Practice idempotency, consistency, resilience, and auditability.
+- Add asynchronous processing and materialized views.
+- Add production-style observability and operational tooling.
+- Run the system locally with Docker and eventually deploy it to Kubernetes.
+
+## Scope and architecture
+
+### MVP capabilities
+
+- Accounts and account lookup.
+- Available and ledger balances.
+- Immutable ledger entries as the canonical source of truth.
+- Deposit, withdrawal, and transfer APIs.
+- Kafka events for `ledger.entries`.
+- A reconciliation worker that compares the ledger with cached balances.
+
+### Planned architecture
+
+- **API:** Go HTTP service responsible for validation, idempotency, and ledger writes.
+- **Persistence:** PostgreSQL for the current local ledger and account storage.
+- **Event bus:** Kafka topics for `ledger.entries` and optionally `balance.updated`.
+- **Workers:** Balance materialization, reconciliation, and future settlement processing.
+- **Consumers:** Optional notification, fraud, analytics, and external-payment services.
+- **Proxy:** Envoy for HTTP routing and future mTLS experiments.
+- **Observability:** Structured logs, Prometheus metrics, OpenTelemetry tracing, and Grafana dashboards.
+
+Transfer flow:
+
+1. The API receives and validates a request.
+2. The API writes a debit and credit ledger entry.
+3. The API publishes a `ledger.entries` event.
+4. The balance worker updates the materialized balance.
+5. Other consumers can react to `balance.updated` without querying the ledger.
+
+
 ## Local development
 
 Requirements: Docker Compose and Go 1.24+.
@@ -50,46 +91,6 @@ postgres://yasha:yasha@localhost:5432/yasha?sslmode=disable
 
 Amounts are represented as integer minor units, such as cents or pence, never floating-point values.
 
-## Project goals
-
-The project is also a learning and interview-oriented system-design exercise. The main goals are:
-
-- Build a banking backend with clear domain boundaries.
-- Treat the ledger as the canonical, append-only source of truth.
-- Practice idempotency, consistency, resilience, and auditability.
-- Add asynchronous processing and materialized views.
-- Add production-style observability and operational tooling.
-- Run the system locally with Docker and eventually deploy it to Kubernetes.
-
-## Scope and architecture
-
-### MVP capabilities
-
-- Accounts and account lookup.
-- Available and ledger balances.
-- Immutable ledger entries as the canonical source of truth.
-- Deposit, withdrawal, and transfer APIs.
-- Kafka events for `ledger.entries`.
-- A reconciliation worker that compares the ledger with cached balances.
-
-### Planned architecture
-
-- **API:** Go HTTP service responsible for validation, idempotency, and ledger writes.
-- **Persistence:** PostgreSQL for the current local ledger and account storage.
-- **Event bus:** Kafka topics for `ledger.entries` and optionally `balance.updated`.
-- **Workers:** Balance materialization, reconciliation, and future settlement processing.
-- **Consumers:** Optional notification, fraud, analytics, and external-payment services.
-- **Proxy:** Envoy for HTTP routing and future mTLS experiments.
-- **Observability:** Structured logs, Prometheus metrics, OpenTelemetry tracing, and Grafana dashboards.
-
-Transfer flow:
-
-1. The API receives and validates a request.
-2. The API writes a debit and credit ledger entry.
-3. The API publishes a `ledger.entries` event.
-4. The balance worker updates the materialized balance.
-5. Other consumers can react to `balance.updated` without querying the ledger.
-
 ## Roadmap
 
 Each milestone should produce something visible and runnable while keeping the scope small.
@@ -119,7 +120,7 @@ Each milestone should produce something visible and runnable while keeping the s
 
 - [x] Move handlers out of `main.go` into feature packages under `internal/`.
 - [x] Keep route registration in the server package.
-- [ ] Add focused handler and repository tests.
+- [x] Add focused handler.
 
 ### Milestone 3.2 — Safe controller errors and logging
 
